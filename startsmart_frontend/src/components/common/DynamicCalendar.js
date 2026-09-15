@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 
 /**
@@ -23,6 +23,16 @@ const DynamicCalendar = ({
     }
     return new Date();
   });
+
+  // Sync visible month when selectedDate changes
+  useEffect(() => {
+    if (selectedDate) {
+      const d = new Date(selectedDate);
+      if (!isNaN(d.getTime())) {
+        setCurrentMonthDate(new Date(d.getFullYear(), d.getMonth(), 1));
+      }
+    }
+  }, [selectedDate]);
 
   const year = currentMonthDate.getFullYear();
   const month = currentMonthDate.getMonth(); // 0-indexed (0 = Jan)
@@ -116,6 +126,40 @@ const DynamicCalendar = ({
     });
   };
 
+  // Helper to check if any meeting on a day cell is within 12 hours from now
+  const hasMeetingWithin12Hours = (cellMeetings, dayNum) => {
+    if (!cellMeetings || cellMeetings.length === 0) return false;
+    const now = new Date();
+
+    return cellMeetings.some((mtg) => {
+      let mtgDate;
+      if (mtg.date) {
+        const [yy, mm, dd] = mtg.date.split('-').map(Number);
+        let hrs = 15;
+        let mins = 0;
+        if (mtg.time) {
+          const timeMatch = mtg.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+          if (timeMatch) {
+            hrs = parseInt(timeMatch[1], 10);
+            mins = parseInt(timeMatch[2], 10);
+            const ampm = timeMatch[3];
+            if (ampm) {
+              if (ampm.toUpperCase() === 'PM' && hrs < 12) hrs += 12;
+              if (ampm.toUpperCase() === 'AM' && hrs === 12) hrs = 0;
+            }
+          }
+        }
+        mtgDate = new Date(yy, mm - 1, dd, hrs, mins);
+      } else {
+        mtgDate = new Date(year, month, dayNum, 15, 0);
+      }
+
+      const diffMs = mtgDate.getTime() - now.getTime();
+      const diffHrs = diffMs / (1000 * 60 * 60);
+      return diffHrs >= -2 && diffHrs <= 12;
+    });
+  };
+
   // Build grid items (empty padding cells + day cells)
   const gridCells = [];
   
@@ -127,6 +171,7 @@ const DynamicCalendar = ({
   // Actual day cells
   for (let d = 1; d <= totalDaysInMonth; d++) {
     const dayMeetings = getMeetingsForDay(d);
+    const meetingSoon = hasMeetingWithin12Hours(dayMeetings, d);
     gridCells.push({
       type: 'day',
       id: `day-${d}`,
@@ -134,7 +179,8 @@ const DynamicCalendar = ({
       today: isToday(d),
       selected: isSelected(d),
       meetings: dayMeetings,
-      hasMeetings: dayMeetings.length > 0
+      hasMeetings: dayMeetings.length > 0,
+      hasMeetingsSoon: meetingSoon
     });
   }
 
@@ -191,12 +237,14 @@ const DynamicCalendar = ({
             return <div key={cell.id} className="h-9" />;
           }
 
-          const { dayNum, today, selected, hasMeetings, meetings: cellMeetings } = cell;
+          const { dayNum, today, selected, hasMeetings, hasMeetingsSoon, meetings: cellMeetings } = cell;
           const formattedCellDate = formatDateString(year, month + 1, dayNum);
 
           let cellClass = 'w-8 h-8 rounded-xl text-slate-600 font-medium hover:bg-slate-100 flex flex-col items-center justify-center transition-all cursor-pointer relative';
           
-          if (today) {
+          if (hasMeetingsSoon) {
+            cellClass = 'w-8 h-8 rounded-xl bg-amber-500 text-white font-bold ring-4 ring-amber-400/80 animate-pulse border-2 border-amber-600 flex flex-col items-center justify-center shadow-lg shadow-amber-500/30 cursor-pointer relative z-10';
+          } else if (today) {
             cellClass = 'w-8 h-8 rounded-xl bg-[#78161A] text-white font-bold flex flex-col items-center justify-center shadow-sm cursor-pointer relative';
           } else if (selected) {
             cellClass = 'w-8 h-8 rounded-xl bg-[#78161A]/10 text-[#78161A] font-bold border-2 border-[#78161A] flex flex-col items-center justify-center cursor-pointer relative';
@@ -211,7 +259,9 @@ const DynamicCalendar = ({
                 onClick={() => onSelectDate && onSelectDate(formattedCellDate, new Date(year, month, dayNum))}
                 className={cellClass}
                 title={
-                  hasMeetings
+                  hasMeetingsSoon
+                    ? `⚡ Meeting within 12 hours! (${cellMeetings.length} Meeting)`
+                    : hasMeetings
                     ? `${dayNum} ${monthNames[month]} - ${cellMeetings.length} Meeting(s)`
                     : `${dayNum} ${monthNames[month]}`
                 }
@@ -222,7 +272,11 @@ const DynamicCalendar = ({
                 {hasMeetings && (
                   <span
                     className={`w-1.5 h-1.5 rounded-full absolute bottom-1 ${
-                      today ? 'bg-amber-300' : 'bg-[#78161A]'
+                      hasMeetingsSoon
+                        ? 'bg-white animate-ping'
+                        : today
+                        ? 'bg-amber-300'
+                        : 'bg-[#78161A]'
                     }`}
                   />
                 )}
@@ -237,6 +291,10 @@ const DynamicCalendar = ({
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#78161A]" />
           <span>Today</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-amber-300 animate-pulse" />
+          <span className="font-bold text-amber-700">Meeting within 12h</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-rose-200" />

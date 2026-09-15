@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FaCalendarAlt,
   FaClock,
@@ -6,141 +6,173 @@ import {
   FaInfoCircle,
   FaGraduationCap,
   FaThumbsUp,
-  FaCheckCircle
+  FaCheckCircle,
+  FaUser,
+  FaFileAlt
 } from 'react-icons/fa';
 import DynamicCalendar from '../../components/common/DynamicCalendar';
+
+const BASE_URL = 'http://localhost:9085/api/meetings';
+const DEFAULT_CFL_EMP_ID = 9085414;
+
+// Helper to get today's date string YYYY-MM-DD
+const getTodayDateString = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const Meetings = () => {
   // Main Tab State: 'my-meetings' vs 'history'
   const [activeTab, setActiveTab] = useState('my-meetings');
+  const [cflEmpId] = useState(DEFAULT_CFL_EMP_ID);
+
+  // Dynamic Contacts State from database
+  const [contacts, setContacts] = useState({
+    mentorName: 'Rohit Verma',
+    managerName: 'Rajesh Verma',
+    hrName: 'Ananya Gupta'
+  });
 
   // Form State for Schedule Meeting
   const [meetingWith, setMeetingWith] = useState('Mentor'); // 'Mentor' | 'Manager' | 'HR'
   const [selectedPerson, setSelectedPerson] = useState('Rohit Verma');
   const [meetingType, setMeetingType] = useState('Mentoring Session');
-  const [meetingDate, setMeetingDate] = useState('2026-05-15');
+  const [meetingDate, setMeetingDate] = useState(getTodayDateString());
   const [meetingTime, setMeetingTime] = useState('');
   const [meetingMode, setMeetingMode] = useState('Zoom');
   const [meetingLink, setMeetingLink] = useState('');
   const [agenda, setAgenda] = useState('');
 
-  // Dynamic Meetings List
-  const [upcomingMeetings, setUpcomingMeetings] = useState([
-    {
-      id: 1,
-      date: '2026-05-22',
-      day: 22,
-      month: 'MAY',
-      year: 2026,
-      title: 'Mentoring Session — Rohit Verma',
-      time: '03:00 PM',
-      mode: 'Zoom',
-      createdByType: 'Mentor', // 'Mentor' | 'You'
-      link: 'https://zoom.us/j/123456789'
-    },
-    {
-      id: 2,
-      date: '2026-05-29',
-      day: 29,
-      month: 'MAY',
-      year: 2026,
-      title: 'Mentoring Session — Rohit Verma',
-      time: '11:30 AM',
-      mode: 'Google Meet',
-      createdByType: 'You',
-      link: 'https://meet.google.com/abc-defg-hij'
-    }
-  ]);
+  // Dynamic Meetings Lists
+  const [upcomingMeetings, setUpcomingMeetings] = useState([]);
+  const [historyMeetings, setHistoryMeetings] = useState([]);
 
-  const [historyMeetings] = useState([
-    {
-      id: 101,
-      day: 15,
-      month: 'APR',
-      title: '1-on-1 Onboarding Check-in',
-      withPerson: 'Ananya Gupta (HR)',
-      time: '10:00 AM',
-      mode: 'Teams Meeting',
-      status: 'Completed'
-    },
-    {
-      id: 102,
-      day: 28,
-      month: 'APR',
-      title: 'Initial Goal Setup & Probation Review',
-      withPerson: 'Rajesh Verma (Manager)',
-      time: '02:30 PM',
-      mode: 'In-Person',
-      status: 'Completed'
-    }
-  ]);
+  // Fetch dynamic contacts and meeting lists from backend API
+  useEffect(() => {
+    // 1. Fetch CFL Contacts (Mentor, Manager, HR names from database)
+    fetch(`${BASE_URL}/cfl/${cflEmpId}/contacts`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          const mentor = data.mentorName || 'Rohit Verma';
+          const manager = data.managerName || 'Rajesh Verma';
+          const hr = data.hrName || 'Ananya Gupta';
+          setContacts({ mentorName: mentor, managerName: manager, hrName: hr });
+          setSelectedPerson(mentor);
+        }
+      })
+      .catch((err) => console.warn('Could not load contacts from backend API, using fallback', err));
+
+    // 2. Fetch Upcoming Meetings
+    fetch(`${BASE_URL}/cfl/${cflEmpId}/upcoming`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setUpcomingMeetings(data);
+        }
+      })
+      .catch((err) => console.warn('Could not load upcoming meetings from backend API', err));
+
+    // 3. Fetch History Meetings
+    fetch(`${BASE_URL}/cfl/${cflEmpId}/history`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setHistoryMeetings(data);
+        }
+      })
+      .catch((err) => console.warn('Could not load meeting history from backend API', err));
+  }, [cflEmpId]);
 
   // Handle Person & Meeting Type options when switching "MEETING WITH"
   const handleMeetingWithChange = (role) => {
     setMeetingWith(role);
     if (role === 'Mentor') {
-      setSelectedPerson('Rohit Verma');
+      setSelectedPerson(contacts.mentorName || 'Rohit Verma');
       setMeetingType('Mentoring Session');
     } else if (role === 'Manager') {
-      setSelectedPerson('Rajesh Verma');
+      setSelectedPerson(contacts.managerName || 'Rajesh Verma');
       setMeetingType('Manager Sync / 1:1');
     } else if (role === 'HR') {
-      setSelectedPerson('Ananya Gupta');
+      setSelectedPerson(contacts.hrName || 'Ananya Gupta');
       setMeetingType('HR Sync');
     }
   };
 
   // Form Submit Handler
-  const handleSendRequest = (e) => {
+  const handleSendRequest = async (e) => {
     e.preventDefault();
     if (!selectedPerson || !meetingDate || !meetingTime || !agenda) {
       alert('Please complete all required fields (Date, Time, and Agenda).');
       return;
     }
 
-    // Format Date & Time for display
-    const dateParts = meetingDate.split('-');
-    let dateObj;
-    if (dateParts.length === 3) {
-      dateObj = new Date(parseInt(dateParts[0], 10), parseInt(dateParts[1], 10) - 1, parseInt(dateParts[2], 10));
-    } else {
-      dateObj = new Date(meetingDate);
-    }
-
-    const day = dateObj.getDate() || 15;
-    const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-    const monthStr = monthNames[dateObj.getMonth()] || 'MAY';
-    const yearNum = dateObj.getFullYear();
-
-    let formattedTime = meetingTime;
-    const timeParts = meetingTime.split(':');
-    if (timeParts.length >= 2) {
-      const hrs = parseInt(timeParts[0], 10);
-      const mins = timeParts[1];
-      const ampm = hrs >= 12 ? 'PM' : 'AM';
-      const adjustedHrs = hrs % 12 || 12;
-      formattedTime = `${adjustedHrs < 10 ? '0' + adjustedHrs : adjustedHrs}:${mins} ${ampm}`;
-    }
-
-    const newMeeting = {
-      id: Date.now(),
-      date: meetingDate,
-      day: day,
-      month: monthStr,
-      year: yearNum,
-      title: `${meetingType} — ${selectedPerson}`,
-      time: `${formattedTime}`,
-      mode: meetingMode,
-      createdByType: 'You',
-      link: meetingLink || 'https://zoom.us/j/demo-meeting'
+    const payload = {
+      cflEmpId: cflEmpId,
+      meetingWithRole: meetingWith,
+      selectedPerson: selectedPerson,
+      meetingType: meetingType,
+      meetingDate: meetingDate,
+      meetingTime: meetingTime,
+      meetingMode: meetingMode,
+      meetingLink: meetingLink,
+      agenda: agenda
     };
 
-    setUpcomingMeetings([newMeeting, ...upcomingMeetings]);
-    alert('Meeting request submitted successfully!');
+    try {
+      const response = await fetch(BASE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    // Reset Form
-    setAgenda('');
-    setMeetingLink('');
+      if (response.ok) {
+        const newMeeting = await response.json();
+        setUpcomingMeetings([newMeeting, ...upcomingMeetings]);
+        alert('Meeting request submitted successfully!');
+
+        // Reset Form
+        setAgenda('');
+        setMeetingLink('');
+      } else {
+        alert('Failed to schedule meeting. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error submitting meeting request:', error);
+      alert('Network error while scheduling meeting.');
+    }
+  };
+
+  // Helper to check if meeting is within 12 hours from now
+  const isMeetingWithin12Hours = (mtg) => {
+    if (!mtg) return false;
+    let mtgDate;
+    if (mtg.date) {
+      const [y, m, d] = mtg.date.split('-').map(Number);
+      let hrs = 15;
+      let mins = 0;
+      if (mtg.time) {
+        const timeMatch = mtg.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+        if (timeMatch) {
+          hrs = parseInt(timeMatch[1], 10);
+          mins = parseInt(timeMatch[2], 10);
+          const ampm = timeMatch[3];
+          if (ampm) {
+            if (ampm.toUpperCase() === 'PM' && hrs < 12) hrs += 12;
+            if (ampm.toUpperCase() === 'AM' && hrs === 12) hrs = 0;
+          }
+        }
+      }
+      mtgDate = new Date(y, m - 1, d, hrs, mins);
+    } else return false;
+
+    const now = new Date();
+    const diffMs = mtgDate.getTime() - now.getTime();
+    const diffHrs = diffMs / (1000 * 60 * 60);
+    return diffHrs >= -2 && diffHrs <= 12;
   };
 
   return (
@@ -209,57 +241,78 @@ const Meetings = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {upcomingMeetings.map((mtg) => (
-                    <div
-                      key={mtg.id}
-                      className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-none"
-                    >
-                      {/* Left Date Badge + Info */}
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100/60 flex flex-col items-center justify-center shrink-0">
-                          <span className="text-sm font-bold text-[#78161A] leading-none">
-                            {mtg.day}
-                          </span>
-                          <span className="text-[9px] font-bold text-[#78161A]/80 uppercase mt-0.5">
-                            {mtg.month}
-                          </span>
-                        </div>
+                  {upcomingMeetings.map((mtg) => {
+                    const isSoon = isMeetingWithin12Hours(mtg);
+                    return (
+                      <div
+                        key={mtg.id}
+                        className={`flex items-center justify-between gap-4 p-3 rounded-2xl transition-all ${
+                          isSoon
+                            ? 'bg-amber-50/80 border-2 border-amber-400 ring-2 ring-amber-300/60 shadow-md animate-pulse'
+                            : 'border-b border-slate-100 last:border-none'
+                        }`}
+                      >
+                        {/* Left Date Badge + Info */}
+                        <div className="flex items-center gap-3.5">
+                          <div className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0 ${
+                            isSoon
+                              ? 'bg-amber-500 text-white font-bold shadow-sm'
+                              : 'bg-rose-50 border border-rose-100/60'
+                          }`}>
+                            <span className={`text-sm font-bold leading-none ${isSoon ? 'text-white' : 'text-[#78161A]'}`}>
+                              {mtg.day}
+                            </span>
+                            <span className={`text-[9px] font-bold uppercase mt-0.5 ${isSoon ? 'text-amber-100' : 'text-[#78161A]/80'}`}>
+                              {mtg.month}
+                            </span>
+                          </div>
 
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 font-grotesk">
-                            {mtg.title}
-                          </h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
-                            {mtg.time} · {mtg.mode}
-                          </p>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800 font-grotesk">
+                              {mtg.title}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+                              {mtg.time} · {mtg.mode}
+                            </p>
 
-                          <div className="mt-1.5">
-                            {mtg.createdByType === 'Mentor' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-semibold">
-                                <FaGraduationCap className="w-3 h-3 text-emerald-600" />
-                                Created by Mentor
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10.5px] font-semibold">
-                                <FaThumbsUp className="w-3 h-3 text-amber-600" />
-                                Created by You
-                              </span>
-                            )}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              {isSoon && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[10.5px] font-extrabold shadow-sm animate-bounce">
+                                  ⚡ Starting Soon (&lt;12h)
+                                </span>
+                              )}
+
+                              {mtg.createdByType === 'Mentor' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-semibold">
+                                  <FaGraduationCap className="w-3 h-3 text-emerald-600" />
+                                  Created by Mentor
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10.5px] font-semibold">
+                                  <FaThumbsUp className="w-3 h-3 text-amber-600" />
+                                  Created by You
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Join Button */}
-                      <a
-                        href={mtg.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-5 py-1.5 rounded-full bg-[#14B8A6] hover:bg-[#0D9488] text-white text-xs font-bold shadow-sm transition-all shrink-0"
-                      >
-                        Join
-                      </a>
-                    </div>
-                  ))}
+                        {/* Join Button */}
+                        <a
+                          href={mtg.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`px-5 py-1.5 rounded-full text-white text-xs font-bold shadow-sm transition-all shrink-0 ${
+                            isSoon
+                              ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-300'
+                              : 'bg-[#14B8A6] hover:bg-[#0D9488]'
+                          }`}
+                        >
+                          Join
+                        </a>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -442,44 +495,92 @@ const Meetings = () => {
 
         </div>
       ) : (
-        /* Meeting History View */
-        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
-          <h2 className="text-base font-bold text-[#78161A] font-grotesk">
-            Past Meetings History
-          </h2>
+        /* Meeting History View Table */
+        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-[#78161A] font-grotesk">
+              Meeting History
+            </h2>
+            <span className="text-xs font-semibold text-slate-400">
+              {historyMeetings.length} past meeting(s)
+            </span>
+          </div>
 
-          <div className="space-y-3">
-            {historyMeetings.map((mtg) => (
-              <div
-                key={mtg.id}
-                className="flex items-center justify-between gap-4 p-4 border border-slate-100 rounded-xl hover:bg-slate-50/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex flex-col items-center justify-center shrink-0">
-                    <span className="text-sm font-bold text-slate-700 leading-none">
-                      {mtg.day}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
-                      {mtg.month}
-                    </span>
-                  </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3 px-4">DATE</th>
+                  <th className="py-3 px-4">WITH</th>
+                  <th className="py-3 px-4">TYPE</th>
+                  <th className="py-3 px-4">MODE</th>
+                  <th className="py-3 px-4">CREATED BY</th>
+                  <th className="py-3 px-4">STATUS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                {historyMeetings.map((mtg) => {
+                  const formattedDay = mtg.day < 10 ? `0${mtg.day}` : mtg.day;
+                  const dateDisplay = `${formattedDay} ${mtg.month}, ${mtg.time}`;
 
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800 font-grotesk">
-                      {mtg.title}
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      With {mtg.withPerson} · {mtg.time} ({mtg.mode})
-                    </p>
-                  </div>
-                </div>
+                  return (
+                    <tr key={mtg.id} className="hover:bg-slate-50/60 transition-colors">
+                      {/* DATE */}
+                      <td className="py-4 px-4 font-semibold text-slate-800">
+                        {dateDisplay}
+                      </td>
 
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
-                  <FaCheckCircle className="w-3 h-3 text-emerald-600" />
-                  {mtg.status}
-                </span>
-              </div>
-            ))}
+                      {/* WITH */}
+                      <td className="py-4 px-4 text-slate-800 font-medium">
+                        {mtg.withPerson || `${contacts.managerName} (Manager)`}
+                      </td>
+
+                      {/* TYPE */}
+                      <td className="py-4 px-4 text-slate-700">
+                        {mtg.meetingType || mtg.title || '1:1 Discussion'}
+                      </td>
+
+                      {/* MODE */}
+                      <td className="py-4 px-4 text-slate-600">
+                        {mtg.mode}
+                      </td>
+
+                      {/* CREATED BY */}
+                      <td className="py-4 px-4">
+                        {mtg.createdByType === 'Manager' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold">
+                            <FaUser className="w-3 h-3 text-emerald-600" />
+                            Created by Manager
+                          </span>
+                        ) : mtg.createdByType === 'HR' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold">
+                            <FaFileAlt className="w-3 h-3 text-emerald-600" />
+                            Created by HR
+                          </span>
+                        ) : mtg.createdByType === 'Mentor' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold">
+                            <FaGraduationCap className="w-3 h-3 text-emerald-600" />
+                            Created by Mentor
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold">
+                            <FaThumbsUp className="w-3 h-3 text-amber-600" />
+                            Created by You
+                          </span>
+                        )}
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="py-4 px-4">
+                        <span className="inline-flex items-center justify-center px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[11px] font-bold">
+                          Completed
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
